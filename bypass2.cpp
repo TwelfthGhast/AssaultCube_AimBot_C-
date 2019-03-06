@@ -189,7 +189,7 @@ int main(void){
     AC_bypass.get_procID("ac_client.exe");
     AC_player player;
     cout << sizeof(AC_player) << endl;
-    HANDLE hProcess = AC_bypass.hook(PROCESS_ALL_ACCESS);
+    HANDLE hProcess = AC_bypass.hook(PROCESS_VM_READ);
     int ptrToPlayer = 0x00509B74;
     int dr_playerAddress = AC_bypass.readInt(ptrToPlayer, hProcess);
     cout << hex << uintptr_t(dr_playerAddress) << endl;
@@ -197,25 +197,10 @@ int main(void){
     while(1){
         //get 1024 chars starting from derefenced address containing player struct;
         AC_bypass.readPlayer(player_data, dr_playerAddress, hProcess);
-        //Printing chars that we get. It is good that we get username of player in what is returned but doesn't match the address returned by ReClass or CheatEngine even with respect to endianness.
-        for(int i = 0; i < sizeof(player_data); i++){
-            cout << hex << i << ": " << hex << +player_data[i] << "\t\t" << dec << player_data[i]<< endl;
-        }
-        /*
-        //Some fail attempt at trying to convert 4 chars into integers. Probably some really basic error;
-        for(int i = 0; i <= sizeof(player_data)/4; i++){
-            cout << "4-byte address " << i << endl;
-            int bytetoint;
-            for(int j = 0; j<4; j++){
-                    memcpy(&bytetoint,&player_data[4*i+j],1);
-            }
-            cout << bytetoint << endl;
-        }
-        */
-        //Get ammo of assault rifle + print
-        int temp2 = AC_bypass.readInt(dr_playerAddress+0x148, hProcess);
-        cout << dec << temp2 << endl;
-        Sleep(1000000);
+        //Copy char/byte array in order to populate our player structure
+        memcpy(&player, player_data, sizeof(AC_player));
+        cout << dec << player.N00000735 << endl;
+        Sleep(1);
     }
     AC_bypass.unhook(hProcess);
     return 0;

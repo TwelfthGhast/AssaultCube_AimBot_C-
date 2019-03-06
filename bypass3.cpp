@@ -3,17 +3,28 @@
 #include <tlhelp32.h>
 #include <vector>
 
+#define CLIENT_PROCESS_NAME "ac_client.exe"
+
 using namespace std;
+
+int debug = 0;
+
+struct Vector3D
+{
+    float xcoord;
+    float ycoord;
+    float zcoord;
+};
 
 struct AC_player
 {
 	char pad_0x0000[0x4]; //0x0000
-	std::vector<float> N0000069A;
-    std::vector<float> N0000069D;
+	Vector3D N0000069A;
+    Vector3D N0000069D;
 	char pad_0x001C[0xC]; //0x001C
-	std::vector<float> N000006A3;
-	std::vector<float> N000006A6;
-	std::vector<float> N000006A9;
+	Vector3D N000006A3;
+	Vector3D N000006A6;
+	Vector3D N000006A9;
 	char pad_0x0048[0x29]; //0x004C
 	float N000006B7; //0x0078  Position of head at start of last jump
 	char pad_0x007C[0x7C]; //0x007C
@@ -82,7 +93,9 @@ class bypass{
 public:
     //Get ID of a process given its name
     int get_procID(const char target[]){
-        cout << "Function: get_procID called." << endl;
+        if(debug){
+            cout << "Function: get_procID called." << endl;
+        }
         processID = 0;
         //Create a snapshot of currently running processes
         HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -115,13 +128,16 @@ public:
         if(processID == 0){
             cout << "Process not found. Exiting..." << endl;
             exit(1);
+        } else if(debug){
+            cout << "Function: get_procID resolved." << endl;
         }
-        cout << "Function: get_procID resolved." << endl;
     }
 
     //Attach to a running process
     HANDLE hook(DWORD access){
-        cout << "Function: hook called." << endl;
+        if(debug){
+            cout << "Function: hook called." << endl;
+        }
         HANDLE processHandle = OpenProcess(
             access,    //Permission level you are seeking
             FALSE,     //Do child processes inherit permissions?
@@ -130,21 +146,26 @@ public:
         if(processHandle == NULL){
             cout << GetLastError() << endl;
             exit(1);
-        } else {
+        } else if(debug){
             return processHandle;
             cout << "Function: hook resolved." << endl;
+        } else {
+            return processHandle;
         }
     }
 
     //Detach from a running process
     void unhook(HANDLE processHandle){
-        cout << "Function: unhook called." << endl;
-        cout << "HANDLE: " << processHandle << endl;
+        if(debug){
+            cout << "Function: unhook called." << endl;
+            //I think HANDLES change addresses?
+            //cout << "HANDLE: " << processHandle << endl;
+        }
         int result = CloseHandle(processHandle);
         if(result == 0){
             cout << GetLastError() << endl;
             exit(1);
-        } else {
+        } else if(debug){
             cout << "Function: unhook resolved." << endl;
         }
     }
@@ -160,14 +181,18 @@ public:
         );
         if(result==0){
             cout << "An error occurred with function: readInt - " << GetLastError() << endl;
-        } else {
+        } else if(debug){
             return temp;
             cout << "Function: readInt resolved." << endl;
+        } else {
+            return temp;
         }
     }
 
     void readPlayer(unsigned char* outstr, int playerAddress, HANDLE processHandle){
-        cout << "Function: readPlayer called." << endl;
+        if(debug){
+            cout << "Function: readPlayer called." << endl;
+        }
         bool result = ReadProcessMemory(
             processHandle,
             (LPCVOID)playerAddress,                //Address we are trying to hook. Change to address of varInt
@@ -177,46 +202,45 @@ public:
         );
         if(result==0){
             cout << "An error occurred with function: readPlayer - " << GetLastError() << endl;
-        } else {
+        } else if(debug){
             cout << "Function: readPlayer resolved." << endl;
         }
     }
 };
 
+AC_player player_update(AC_player pu_player_entity, int pu_player_address){
+        bypass pu_AC_bypass;
+        pu_AC_bypass.get_procID(CLIENT_PROCESS_NAME);
+        HANDLE pu_hProcess = pu_AC_bypass.hook(PROCESS_ALL_ACCESS);
+        unsigned char pu_player_data[sizeof(AC_player)];
+        pu_AC_bypass.readPlayer(pu_player_data, pu_player_address, pu_hProcess);
+        memcpy(&pu_player_entity, pu_player_data, sizeof(AC_player));
+        //cout << dec << pu_player_entity.N00000735 << endl;
+        pu_AC_bypass.unhook(pu_hProcess);
+        return pu_player_entity;
+}
 
 int main(void){
+    //Initial hook to find our player addresses
     bypass AC_bypass;
-    AC_bypass.get_procID("ac_client.exe");
-    AC_player player;
-    cout << sizeof(AC_player) << endl;
+    AC_bypass.get_procID(CLIENT_PROCESS_NAME);
     HANDLE hProcess = AC_bypass.hook(PROCESS_ALL_ACCESS);
     int ptrToPlayer = 0x00509B74;
     int dr_playerAddress = AC_bypass.readInt(ptrToPlayer, hProcess);
     cout << hex << uintptr_t(dr_playerAddress) << endl;
-    unsigned char player_data[sizeof(AC_player)];
-    while(1){
-        //get 1024 chars starting from derefenced address containing player struct;
-        AC_bypass.readPlayer(player_data, dr_playerAddress, hProcess);
-        //Printing chars that we get. It is good that we get username of player in what is returned but doesn't match the address returned by ReClass or CheatEngine even with respect to endianness.
-        for(int i = 0; i < sizeof(player_data); i++){
-            cout << hex << i << ": " << hex << +player_data[i] << "\t\t" << dec << player_data[i]<< endl;
-        }
-        /*
-        //Some fail attempt at trying to convert 4 chars into integers. Probably some really basic error;
-        for(int i = 0; i <= sizeof(player_data)/4; i++){
-            cout << "4-byte address " << i << endl;
-            int bytetoint;
-            for(int j = 0; j<4; j++){
-                    memcpy(&bytetoint,&player_data[4*i+j],1);
-            }
-            cout << bytetoint << endl;
-        }
-        */
-        //Get ammo of assault rifle + print
-        int temp2 = AC_bypass.readInt(dr_playerAddress+0x148, hProcess);
-        cout << dec << temp2 << endl;
-        Sleep(1000000);
-    }
     AC_bypass.unhook(hProcess);
+
+    //Declare our player
+    AC_player player;
+    cout << sizeof(AC_player) << endl;
+
+    while(1){
+        //Something is going wrong here - have a feeling scope is wrong? contents of pu_player_entity not being copied out properly?
+        player = player_update(player, dr_playerAddress);
+        cout << player.N0000069A.xcoord << " " << player.N0000069A.ycoord << " " << player.N0000069A.zcoord << endl;
+        cout << dec << player.N00000735 << endl;
+        Sleep(100);
+    }
+
     return 0;
 }
